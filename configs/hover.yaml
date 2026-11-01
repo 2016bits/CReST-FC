@@ -1,0 +1,8 @@
+seed: 42
+source:
+  dataset: HOVER
+  path: data/HOVER/data/converted_data/train.json
+  split: train
+output_dir: data/processed/hover_train
+max_relation_pairs: 0
+add_bias_pairs: true

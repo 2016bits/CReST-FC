@@ -1,0 +1,6 @@
+output_dir: outputs/reports/pilot
+runs:
+  - outputs/e0_baselines/pilot
+  - outputs/e1_probes/pilot
+  - outputs/e2_causal/pilot
+  - outputs/e4_evaluation/pilot

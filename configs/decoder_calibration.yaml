@@ -1,0 +1,24 @@
+seed: 42
+encoder: &model
+  id: Qwen/Qwen2.5-0.5B-Instruct
+  cache_dir: /data/yangjun/.cache/huggingface
+  dtype: bfloat16
+  device: cuda
+decoder: *model
+data:
+  samples: data/processed/pilot/samples.jsonl
+  pairs: data/processed/pilot/pairs.jsonl
+labels: [SUPPORTS, REFUTES]
+read_layer: 8
+write_layer: 0
+decoder_lora_layers: [0, 1]
+decoder_fraction: 0.2
+lora:
+  rank: 8
+  alpha: 16
+  dropout: 0.0
+lr: 0.0002
+epochs: 1
+limit: 20
+guided_weight: 0.0
+output_dir: outputs/e3_steering/calibration_pilot

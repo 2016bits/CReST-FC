@@ -1,0 +1,5 @@
+seed: 42
+data:
+  samples: data/processed/pilot/samples.jsonl
+  pairs: data/processed/pilot/pairs.jsonl
+output_path: data/audits/pending_vitaminc_pilot.jsonl

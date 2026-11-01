@@ -1,0 +1,10 @@
+seed: 42
+source:
+  dataset: VitaminC
+  path: data/VitaminC/converted_data/train_2.json
+  split: train
+  limit: 1000
+output_dir: data/processed/vitaminc_train_pilot
+max_relation_pairs: 100
+min_evidence_similarity: 0.75
+add_bias_pairs: true

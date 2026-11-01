@@ -35,6 +35,13 @@ pip-wheel-metadata/
 .ipynb_checkpoints/
 
 # Machine-learning experiment output
+data/EXFEVER
+data/FEVEROUS
+data/FEVER
+data/HOVER
+data/PolitiHop
+data/PolitiHopEGR
+data/VitaminC
 checkpoints/
 outputs/
 runs/
@@ -74,3 +81,10 @@ Desktop.ini
 credentials.json
 secrets.json
 
+
+# Generated research artifacts
+data/raw/
+data/interim/
+data/processed/
+data/audits/
+outputs/

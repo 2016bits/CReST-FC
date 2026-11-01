@@ -1,0 +1,9 @@
+# NOT_SUPPORTED examples are rejected because their relation is ambiguous.
+seed: 42
+source:
+  dataset: EXFEVER
+  path: data/EXFEVER/converted_data/train_nei_x.llm.json
+  split: train
+output_dir: data/processed/exfever_train
+max_relation_pairs: 0
+add_bias_pairs: true

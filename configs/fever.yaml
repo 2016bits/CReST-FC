@@ -1,0 +1,10 @@
+# Replace source.path and source.wiki_db with the official FEVER release.
+seed: 42
+source:
+  dataset: FEVER
+  path: data/raw/fever/train.jsonl
+  wiki_db: data/interim/fever_wiki.sqlite
+  split: train
+output_dir: data/processed/fever_train
+max_relation_pairs: 0
+add_bias_pairs: true

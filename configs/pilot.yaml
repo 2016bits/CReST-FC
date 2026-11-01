@@ -1,0 +1,14 @@
+seed: 42
+model:
+  id: Qwen/Qwen2.5-0.5B-Instruct
+  cache_dir: /data/yangjun/.cache/huggingface
+  dtype: bfloat16
+  device: cuda
+data:
+  samples: data/processed/pilot/samples.jsonl
+  pairs: data/processed/pilot/pairs.jsonl
+labels: [SUPPORTS, REFUTES]
+split: dev
+limit: 20
+output_dir: outputs/e0_baselines/pilot
+conditions: [full, claim_only, evidence_only]

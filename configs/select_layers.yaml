@@ -1,0 +1,5 @@
+run_dir: outputs/e2_causal/pilot
+top_k: 2
+min_pairs: 20
+bootstrap_reps: 1000
+seed: 42

@@ -1,0 +1,8 @@
+seed: 42
+source:
+  dataset: FEVEROUS
+  path: data/FEVEROUS/converted_data/train.json
+  split: train
+output_dir: data/processed/feverous_train
+max_relation_pairs: 0
+add_bias_pairs: true

@@ -1,0 +1,27 @@
+seed: 42
+encoder: &model
+  id: Qwen/Qwen2.5-0.5B-Instruct
+  cache_dir: /data/yangjun/.cache/huggingface
+  dtype: bfloat16
+  device: cuda
+decoder: *model
+data:
+  samples: data/processed/pilot/samples.jsonl
+  pairs: data/processed/pilot/pairs.jsonl
+calibration_checkpoint: outputs/e3_steering/calibration_pilot/best
+selected_layers: [8]
+allow_manual_layers: true  # smoke test only; formal runs use selected_layers_path
+require_dev_pairs: true
+decoder_fraction: 0.2
+lora:
+  rank: 8
+  alpha: 16
+  dropout: 0.0
+lr: 0.0002
+epochs: 1
+limit: 20
+lambda_rel: 1.0
+lambda_inv: 0.2
+lambda_flip: 0.5
+margin_gamma: 0.5
+output_dir: outputs/e3_steering/steer_pilot

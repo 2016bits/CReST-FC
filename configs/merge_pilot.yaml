@@ -1,0 +1,5 @@
+seed: 42
+input_dirs:
+  - data/processed/vitaminc_train_pilot
+  - data/processed/vitaminc_dev_pilot
+output_dir: data/processed/pilot

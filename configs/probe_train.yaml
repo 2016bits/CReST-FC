@@ -1,0 +1,8 @@
+seed: 42
+activation_dir: outputs/e1_probes/activations
+output_dir: outputs/e1_probes/pilot
+labels: [SUPPORTS, REFUTES]
+C: [0.01, 0.1, 1.0]
+data:
+  samples: data/processed/pilot/samples.jsonl
+  pairs: data/processed/pilot/pairs.jsonl
