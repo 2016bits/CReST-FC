@@ -11,7 +11,8 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score
 from .data import adapt, approved_pairs, make_pairs, read_jsonl, validate_dataset, write_jsonl
 from .evaluation import classification_metrics, pair_metrics
-from .modeling import (LABEL_ORDER, PROMPT_VERSION, VERDICT_PROMPT_VERSION, add_lora, load_lora_state, extract_all, get_transformer_blocks,
+from .modeling import (LABEL_ORDER, PROMPT_VERSION, VERDICT_PROMPT_VERSIONS, verdict_verbalizers,
+                       add_lora, load_lora_state, extract_all, get_transformer_blocks,
                        label_margin, load_model, make_patch_hook, read_activation,
                        render_encoder, render_verdict, score_candidate_sequences,
                        temporary_hook, token_positions)
@@ -77,21 +78,26 @@ def baseline(cfg):
         load_lora_state(model, ckpt / "model_lora.pt")
     model.eval()
     labels = _labels(cfg)
+    scheme = cfg.get("verdict_scheme", "fever3")
+    verbalizers = verdict_verbalizers(labels, scheme)
     out = Path(cfg["output_dir"])
     results = []
     for condition in cfg.get("conditions", ["full", "claim_only", "evidence_only", "full_bias"]):
         pred = {}
         for row in rows:
             with torch.inference_mode():
-                scores = score_candidate_sequences(model, tok, render_verdict(row, condition), labels)
+                scores = score_candidate_sequences(model, tok, render_verdict(row, condition, scheme), verbalizers)
             pred[row["sample_id"]] = labels[scores.argmax(-1).item()]
             results.append({"sample_id": row["sample_id"], "group_id": row["group_id"],
                             "condition": condition, "gold": row["label"],
                             "prediction": pred[row["sample_id"]],
+                            "prediction_surface": verbalizers[scores.argmax(-1).item()],
                             "scores": scores.squeeze(0).tolist()})
         modes = sorted({r["evidence_mode"] for r in rows})
         _dump(out / f"metrics_{condition}.json", {"stage": "E0", "condition": condition,
-                                                    "verdict_prompt_version": VERDICT_PROMPT_VERSION,
+                                                    "verdict_prompt_version": VERDICT_PROMPT_VERSIONS[scheme],
+                                                    "verdict_scheme": scheme,
+                                                    "verbalizers": dict(zip(labels, verbalizers)),
                                                     "evidence_mode": modes[0] if len(modes) == 1 else modes,
                                                     "labels": labels,
                                                     **classification_metrics(rows, pred, labels),

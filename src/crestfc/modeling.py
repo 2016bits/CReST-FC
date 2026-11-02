@@ -12,7 +12,25 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 LABEL_ORDER = ("SUPPORTS", "REFUTES", "NEI")
 PROMPT_VERSION = "v1_anchor_last_plain"
-VERDICT_PROMPT_VERSION = "v2_fact_checking_answer"
+VERDICT_PROMPT_VERSIONS = {
+    "fever3": "v2_fact_checking_answer",
+    "binary_support": "v3_binary_supported_not_supported",
+}
+
+
+def verdict_verbalizers(labels: Sequence[str], scheme: str) -> list[str]:
+    """Surface answers in score order; dataset labels stay canonical."""
+    if scheme == "fever3":
+        mapping = {"SUPPORTS": "SUPPORTS", "REFUTES": "REFUTES", "NEI": "NEI"}
+    elif scheme == "binary_support":
+        mapping = {"SUPPORTS": "SUPPORTED", "REFUTES": "NOT_SUPPORTED"}
+        if list(labels) != ["SUPPORTS", "REFUTES"]:
+            raise ValueError("Binary support prompt requires canonical SUPPORTS/REFUTES labels")
+    else:
+        raise ValueError(f"Unknown verdict scheme: {scheme}")
+    if any(label not in mapping for label in labels):
+        raise ValueError(f"Labels {labels} are incompatible with verdict scheme {scheme}")
+    return [mapping[label] for label in labels]
 
 
 def get_transformer_blocks(model) -> list[nn.Module]:
@@ -74,29 +92,48 @@ def render_encoder(row: dict, condition: str = "full") -> tuple[str, dict[str, t
     return "".join(parts), spans
 
 
-def render_verdict(row: dict, condition: str = "full") -> str:
+def render_verdict(row: dict, condition: str = "full", scheme: str = "fever3") -> str:
     if condition not in {"full", "full_bias", "claim_only", "evidence_only", "no_evidence"}:
         raise ValueError(condition)
     claim = "[not provided]" if condition == "evidence_only" else row["claim"]
     evidence = ("[not provided]" if condition in {"claim_only", "no_evidence"} else
                 "\n".join(f'[{e["evidence_id"]}] {e["text"]}' for e in row["evidence"]))
-    prompt = (
-        "You are a fact-checking assistant.\n\n"
-        "Determine whether the evidence supports or refutes\n"
-        "the claim, using only the provided evidence.\n\n"
-        "Labels:\n"
-        "SUPPORTS: The evidence entails the claim.\n"
-        "REFUTES: The evidence contradicts the claim.\n"
-        "NEI: The evidence is insufficient to determine\n"
-        "whether the claim is supported or refuted.\n\n"
-        "Return exactly one label.\n\n"
-        f"Claim: {claim}\n"
-        f"Evidence: {evidence}\n"
-    )
+    if scheme == "fever3":
+        prompt = (
+            "You are a fact-checking assistant.\n\n"
+            "Determine whether the evidence supports or refutes\n"
+            "the claim, using only the provided evidence.\n\n"
+            "Labels:\n"
+            "SUPPORTS: The evidence entails the claim.\n"
+            "REFUTES: The evidence contradicts the claim.\n"
+            "NEI: The evidence is insufficient to determine\n"
+            "whether the claim is supported or refuted.\n\n"
+            "Return exactly one label.\n\n"
+            f"Claim: {claim}\n"
+            f"Evidence: {evidence}\n"
+        )
+    elif scheme == "binary_support":
+        prompt = (
+            "You are an evidence-based fact verification assistant.\n\n"
+            "Determine whether the provided evidence sufficiently supports the claim.\n\n"
+            "Definitions:\n\n"
+            "- SUPPORTED: The evidence provides sufficient information to establish that the claim is true.\n"
+            "- NOT_SUPPORTED: The evidence contradicts the claim or does not provide sufficient information to establish that the claim is true.\n\n"
+            "Instructions:\n\n"
+            "- Base your decision strictly on the provided evidence.\n"
+            "- Do not rely on prior knowledge or assumptions.\n"
+            "- Do not confuse the absence of supporting evidence with evidence that the claim is false.\n"
+            "- Output exactly one label: SUPPORTED or NOT_SUPPORTED.\n"
+            "- Do not provide explanations.\n\n"
+            f"Claim: {claim}\n\n"
+            f"Evidence: {evidence}\n"
+        )
+    else:
+        raise ValueError(f"Unknown verdict scheme: {scheme}")
     if condition == "full_bias" and row.get("claim_metadata"):
         prompt += "Claim metadata: " + ", ".join(
             f"{key}={value}" for key, value in sorted(row["claim_metadata"].items())) + "\n"
-    return prompt + "\nAnswer:"
+    return prompt + ("\nAnswer:" if scheme == "fever3" else "\nLabel:")
 
 
 def render_decoder(row: dict | None = None, guided: bool = False, slot: str = "<latent>",

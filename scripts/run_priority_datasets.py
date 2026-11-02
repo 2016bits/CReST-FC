@@ -59,11 +59,14 @@ def main() -> None:
         audit = json.loads((data_dir / "audit.json").read_text(encoding="utf8"))
         if audit["accepted"] == 0:
             raise RuntimeError(f"No accepted examples for {name}: {audit['rejected']}")
+        fever3 = name == "fever"
         baseline = {"seed": 42, "model": {"id": args.model_id, "cache_dir": args.cache_dir,
                                            "dtype": "bfloat16", "device": "cuda"},
                     "data": {"samples": str(data_dir / "samples.jsonl"),
                              "pairs": str(data_dir / "pairs.jsonl")},
-                    "labels": ["SUPPORTS", "REFUTES", "NEI"], "split": split,
+                    "labels": ["SUPPORTS", "REFUTES", "NEI"] if fever3 else ["SUPPORTS", "REFUTES"],
+                    "verdict_scheme": "fever3" if fever3 else "binary_support",
+                    "split": split,
                     "conditions": ["full", "claim_only", "evidence_only"],
                     "output_dir": str(run / name / "e0")}
         cfg_path = run / name / "baseline.yaml"

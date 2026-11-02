@@ -164,8 +164,9 @@ def main(argv=None):
                 found = sorted(p.name for p in snapshots.glob("*") if (p / "config.json").exists())
                 model_snapshots[key] = found[-1] if found else None
         manifest["local_model_snapshots"] = model_snapshots
-        from .modeling import PROMPT_VERSION, VERDICT_PROMPT_VERSION
-        manifest["prompt_version"] = (VERDICT_PROMPT_VERSION if args.command in {"baseline", "train-baseline"}
+        from .modeling import PROMPT_VERSION, VERDICT_PROMPT_VERSIONS
+        manifest["prompt_version"] = (VERDICT_PROMPT_VERSIONS[cfg.get("verdict_scheme", "fever3")]
+                                      if args.command in {"baseline", "train-baseline"}
                                       else PROMPT_VERSION)
         (out / "run_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf8")
     print(json.dumps(result, indent=2, ensure_ascii=False))

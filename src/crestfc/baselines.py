@@ -7,7 +7,7 @@ import torch
 from torch.nn import functional as F
 from .data import approved_pairs, read_jsonl, validate_dataset, write_jsonl
 from .evaluation import classification_metrics, pair_metrics
-from .modeling import add_lora, load_model, lora_state, render_verdict, score_candidate_sequences
+from .modeling import add_lora, load_model, lora_state, render_verdict, score_candidate_sequences, verdict_verbalizers
 from .training import _partition
 
 
@@ -39,6 +39,8 @@ def train_baseline(cfg):
                       dropout=lc.get("dropout", 0.0))
     opt = torch.optim.AdamW(params, lr=cfg.get("lr", 2e-4))
     labels = cfg.get("labels", ["SUPPORTS", "REFUTES", "NEI"])
+    scheme = cfg.get("verdict_scheme", "fever3")
+    verbalizers = verdict_verbalizers(labels, scheme)
     output = Path(cfg["output_dir"])
     output.mkdir(parents=True, exist_ok=True)
     best = -1.0
@@ -48,7 +50,7 @@ def train_baseline(cfg):
         model.train()
         for i, row in enumerate(train):
             opt.zero_grad(set_to_none=True)
-            scores = score_candidate_sequences(model, tok, render_verdict(row), labels)
+            scores = score_candidate_sequences(model, tok, render_verdict(row, scheme=scheme), verbalizers)
             loss = F.cross_entropy(scores.float(), torch.tensor([labels.index(row["label"])], device=scores.device))
             loss.backward()
             opt.step()
@@ -57,7 +59,7 @@ def train_baseline(cfg):
         pred = {}
         with torch.no_grad():
             for row in dev + [r for a, b, _ in dev_pairs for r in (a, b)]:
-                scores = score_candidate_sequences(model, tok, render_verdict(row), labels)
+                scores = score_candidate_sequences(model, tok, render_verdict(row, scheme=scheme), verbalizers)
                 pred[row["sample_id"]] = labels[scores.argmax(-1).item()]
         metric = classification_metrics(dev, pred, labels)
         metric.update(pair_metrics(rows, pairs, pred, "dev"))

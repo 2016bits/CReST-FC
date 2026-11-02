@@ -9,7 +9,7 @@ import torch
 from torch import nn
 from crestfc.data import Example, normalize_label, validate_dataset, build_fever_wiki_index, adapt
 from crestfc.evaluation import pair_metrics, clustered_bootstrap, parse_structured_output, evidence_prf
-from crestfc.modeling import make_patch_hook, temporary_hook, label_margin, last_nonpadding, score_candidate_sequences, render_verdict
+from crestfc.modeling import make_patch_hook, temporary_hook, label_margin, last_nonpadding, score_candidate_sequences, render_verdict, verdict_verbalizers
 from crestfc.training import js_loss, flip_loss
 
 
@@ -44,6 +44,38 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(render_verdict(row), expected)
         self.assertIn("Evidence: [not provided]", render_verdict(row, "claim_only"))
         self.assertIn("Claim: [not provided]", render_verdict(row, "evidence_only"))
+
+    def test_binary_support_prompt_and_label_mapping(self):
+        row = self.sample("a", "REFUTES", "Acme began in 2012.")
+        expected = ("You are an evidence-based fact verification assistant.\n\n"
+                    "Determine whether the provided evidence sufficiently supports the claim.\n\n"
+                    "Definitions:\n\n"
+                    "- SUPPORTED: The evidence provides sufficient information to establish that the claim is true.\n"
+                    "- NOT_SUPPORTED: The evidence contradicts the claim or does not provide sufficient information to establish that the claim is true.\n\n"
+                    "Instructions:\n\n"
+                    "- Base your decision strictly on the provided evidence.\n"
+                    "- Do not rely on prior knowledge or assumptions.\n"
+                    "- Do not confuse the absence of supporting evidence with evidence that the claim is false.\n"
+                    "- Output exactly one label: SUPPORTED or NOT_SUPPORTED.\n"
+                    "- Do not provide explanations.\n\n"
+                    "Claim: Acme was founded in 2010.\n\n"
+                    "Evidence: [E1] Acme began in 2012.\n\nLabel:")
+        self.assertEqual(render_verdict(row, scheme="binary_support"), expected)
+        self.assertEqual(verdict_verbalizers(["SUPPORTS", "REFUTES"], "binary_support"),
+                         ["SUPPORTED", "NOT_SUPPORTED"])
+        with self.assertRaises(ValueError):
+            verdict_verbalizers(["SUPPORTS", "REFUTES", "NEI"], "binary_support")
+        with tempfile.TemporaryDirectory() as directory:
+            converted = Path(directory) / "converted_data"
+            converted.mkdir()
+            source = converted / "dev.json"
+            source.write_text(json.dumps([{"id": 1, "claim": "Acme was founded in 2010.",
+                                           "label": "refutes", "evidence": "Acme began in 2012."}]))
+            rows, audit = adapt(source, "PolitiHop", "dev")
+            self.assertEqual(audit["accepted"], 1)
+            self.assertEqual(rows[0].label, "REFUTES")
+            self.assertEqual(verdict_verbalizers(["SUPPORTS", rows[0].label], "binary_support")[1],
+                             "NOT_SUPPORTED")
 
     def test_pair_invariants_and_split_leakage(self):
         a = self.sample("a", "SUPPORTS", "Acme was founded in 2010.", "relation_change", "A")
