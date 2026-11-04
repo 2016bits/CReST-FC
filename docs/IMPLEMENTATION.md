@@ -27,6 +27,36 @@ The revised FEVER E0 classification prompt is `v2_fact_checking_answer` and defi
 
 Current E0 routing: FEVER uses the three-label `v2_fact_checking_answer` prompt and scores SUPPORTS/REFUTES/NEI. HOVER, PolitiHop, symmetric-PolitiHop and symmetric-FEVER use the two-label `v3_binary_supported_not_supported` prompt; `SUPPORTED` scores map to canonical `SUPPORTS`, and `NOT_SUPPORTED` scores map to canonical `REFUTES`. The raw labels and stored gold labels are unchanged. Run with `bash scripts/run_e0.sh e0_dataset_prompts` (or add `20` for a smoke test). The linked EGR-FV FEVER converted train/dev/test files have **no NEI ground truth**; this is a three-option inference setup on a two-class subset, not a complete FEVER three-class evaluation. Supplying official NEI examples with audited insufficient evidence is required for that claim.
 
+### FEVER binary layer probes on Qwen2.5-7B
+
+The dedicated E1 implementation in `src/crestfc/fever_probe.py` uses FEVER `converted_data/train.json` and `dev.json`, retaining only SUPPORTS/REFUTES. It removes repeated claims across splits. The Qwen2.5-7B-Instruct snapshot is available in the local cache through `/data/yangjun/.cache/huggingface/models--Qwen--Qwen2.5-7B-Instruct`. The frozen model writes float32 residual activations at the final `Relation anchor:` token for all 28 zero-based blocks. Full, claim-only and evidence-only inputs use the same selected rows. A fixed-capacity, standardized logistic probe is fitted on train for each layer and condition, evaluated on dev, and compared with a shuffled-train-label control. The six GPUs process disjoint data shards and write one array per split, condition and shard. Dev group bootstrap intervals accompany the top layers. These curves measure linear decodability; causal localization still requires E2 interventions.
+
+```bash
+# Every source train example of each binary label, entire dev split, GPUs 0–5
+bash scripts/run_fever7b_e1.sh fever7b_e1_main
+
+# Smaller exploratory run: 5,000 train samples per label, entire dev split
+bash scripts/run_fever7b_e1.sh fever7b_e1_pilot --train-per-label 5000
+
+# Resume a failed extraction without recomputing complete shards
+bash scripts/run_fever7b_e1.sh fever7b_e1_main --resume
+
+# Single-GPU smoke test; candidate selection is disabled below 200 train/dev examples
+bash scripts/run_fever7b_e1.sh fever7b_e1_smoke --gpus 0 --train-per-label 2 --dev-per-label 2
+```
+
+The run saves data provenance and split counts in `manifest.json`, per-GPU progress in `logs/`, activation arrays in `activations/`, and `analysis/layer_probe_metrics.csv`, `layer_probe_macro_f1.png`, and `candidate_layers.json`. `candidate_layers.json` records provisional top layers and only marks a selected layer when the dev group-bootstrap lower bounds for both the full-vs-ablation and full-vs-shuffled-label gaps exceed zero. If no layer passes, the result remains inconclusive. Full train plus dev writes about 140 GB of float32 activations; the 5,000-per-label pilot writes about 20 GB. The labels are binary, while the supplied FEVER converted evidence is marked retrieved, so the output is a binary probe of this converted corpus rather than the official three-class FEVER evaluation.
+
+GPU indexes passed to `--gpus` are logical indexes within the current `CUDA_VISIBLE_DEVICES` list. For example, with `CUDA_VISIBLE_DEVICES=0,1,2,3,4,7`, logical GPU 5 runs on physical device 7. The launcher records this mapping and resumes complete shards without loading the model again. If CUDA initialization fails system-wide, restore the host GPU driver before resuming; completed activation files remain valid.
+
+The original `fever7b_e1_main` run exposed a legacy partition-count bug: the character count of `"0,1,2,3,4,5"` (11) was used instead of the GPU count (6). Its completed shards 0–5 cover six of the eleven partitions. The fixed runner preserves that partition scheme for this run and resumes shards 6–10 on logical GPUs 0–3 with `bash scripts/run_fever7b_e1.sh fever7b_e1_main --resume --resume-gpus 0,1,2,3`. New runs use the correct six partitions. The repair is recorded in `partition_repair.json`; completed activation files are reused. If CUDA fails again, check a fresh tensor allocation with `CUDA_VISIBLE_DEVICES=0 /data/yangjun/.conda/envs/crestfc/bin/python -c 'import torch; print(torch.ones(1, device="cuda"))'` before retrying. Once all shards are complete, `python -m crestfc.fever_probe analyze --run-id fever7b_e1_main --probe-device cuda:0` fits the linear probes on GPU. Each completed layer is saved under `analysis/checkpoints/` and reused on restart; progress is recorded in `analysis/analysis.log` for the running main analysis.
+
+Frozen E1 Probe transfer to same-Claim, changed-Evidence pairs from symmetric-FEVER and VitaminC is implemented in `src/crestfc/counterfactual_probe.py` with `scripts/run_counterfactual_e1_transfer.sh`; see [counterfactual E1 instructions](COUNTERFACTUAL_E1.md). The original E1 run did **not** serialize its fitted Probe coefficients or StandardScaler statistics. `scripts/export_e1_probes.sh fever7b_e1_main` reconstructs those Probe parameters from cached E1 activations, requiring exact agreement with each historical dev prediction checkpoint; it does not retrain or reload the Qwen model. New E1 analyses save parameters as they fit each Probe.
+
+The paired-score decomposition, VitaminC dev-only intercept calibration and source-family bootstrap are documented in [score diagnostics](SCORE_DIAGNOSTICS.md). The calibration does not use VitaminC test labels to choose thresholds; a review queue highlights apparently inconsistent source labels among difficult pairs.
+
+The dedicated frozen 7B E2 causal tracing implementation, GPU runner, review gate, controls, and dev-only E3 layer selection are described in [E2 instructions](E2_7B.md). Its output decision uses a fixed answer suffix after the original E1 relation anchor. Source-label-only pilots are explicitly exploratory.
+
 ```bash
 # Build candidate pairs and the review sheet
 scripts/run_experiments.sh prepare --run-id study1
