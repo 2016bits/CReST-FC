@@ -460,78 +460,17 @@ z_{\ell,p}=\operatorname{Pool}(H^{(\ell)},p).
 
 ## 8. 实验 E1：层级关系定位（Locate）
 
-### E1.1 目标与主要问题
+当前 E1 采用 [E1-B 冻结 Activation Reading 方案](E1-B-readme.md)：冻结 Qwen2.5-7B-Instruct 的全部参数，不拟合 Linear Probe、StandardScaler、LoRA、投影器或决策阈值。历史线性 Probe 的代码和结果仍保存在独立入口，供复现实验与 E1.5/E2 已有分析使用；其结果不得与新 E1-B 混写为同一种读出方法。
 
-找出哪些层/位置包含：
+对同 Claim、不同 Evidence 且标签翻转的人工审核配对，依次输入 Full、Claim-only 和 Evidence-only 上下文。一次 Encoder 前向捕获 28 个 Transformer Block 的**全部有效 Token 输出**；对每个读取层，将其覆盖到同权重冻结 Decoder 的 Block 0 输出所对应的前置占位位置。Decoder 的文字输入只有固定诊断问题，不含原始 Claim、Evidence 或 Gold Label。
 
-1. 真实的 Claim–Evidence 关系信息；
-2. 与 Claim-only/Bias 相关的可读取特征；
-3. 对最小证据变化有正确反应的特征。
+两个完整标签 `SUPPORTS` / `REFUTES` 使用 teacher-forced 序列 log-likelihood 求和；分数差作为未经训练或校准的关系 Margin。主对照包括同模型 Direct Text、相同长度的 No Patch、Claim-only、Evidence-only、长度邻近的独立 Random Donor，以及同 Claim 反事实 Donor。每层报告单样本 Macro-F1、Balanced Accuracy，以及固定 Claim 配对的 Direction、Tie Rate、PairCorrect 和按来源家族聚类的 Bootstrap 区间。
 
-### E1.2 全层 Hidden State 提取
+开发集只用于定位层。只有经人工审核、达到预定样本量且完成全部 28 层扫描时，才允许根据 Full 相对负对照的配对差值选择层；测试集必须读取锁定的开发集选择结果。无训练 Reader 的高分说明冻结模型经指定接口可读取关系信息，并不能单独证明该层处于原模型自然生成的因果决策路径；这一点仍由 E2 检验。运行方法见 [E1-B 实现说明](docs/E1B_FROZEN_READER.md)。
 
-对所有样本先以 `model.eval()` + `torch.inference_mode()` 提取冻结 Encoder 的目标位置激活（**仅用于 E1/E2 的离线分析；E3 训练不能复用已经 detach 的特征**）。
+VitaminC 完整验证集的 Full/Claim-only 层扫描见 [Claim Flip 实验说明](docs/E1B_VITAMINC_CLAIMFLIP.md)；Evidence-only、Random Evidence、No Patch、Direct Text 及贪心生成补充对照见 [控制实验说明](docs/E1B_VITAMINC_CONTROLS.md)。
 
-形式：
-
-\[
-z_{i,\ell,p}\in\mathbb R^d,
-\quad \ell=0,\ldots,L-1,
-\quad p\in\{anchor,claim\_end,evidence\_end,edit\_span\}.
-\]
-
-建议通过 `safetensors` 或 Parquet 索引保存，逐层分块写盘，不要一次性把所有 Token、所有层、所有样本放入内存；可先只缓存 `final_anchor` 与证据编辑片段。
-
-### E1.3 Linear Probe
-
-对每一层、每个读取位置，训练独立的 Logistic Regression 或 `nn.Linear(d,K)`：
-
-\[
-p_\ell(Y\mid z)=\mathrm{softmax}(W_\ell z+b_\ell).
-\]
-
-协议：
-
-- 冻结 LLM；只训练 Probe，训练集用于拟合，验证集用于正则系数/学习率/早停选择。
-- 统一每层数据量、标签分布、训练步数、`C` 正则或权重衰减搜索空间。
-- 提供 Majority Label Probe 与随机标签 Probe 作为负对照。
-- 多标签不平衡使用 Macro-F1 与 Balanced Accuracy，不只看 Accuracy。
-- 在关系变化测试对上另算 `PairCorrect`；该指标比普通 Probe Accuracy 更能区分是否编码关系。
-
-**另做输入消融**：为 `claim_only` / `evidence_only` / `full` 分别提取激活并训练对应 Probe；比较同层表现，但**不同输入条件的 Probe 分数差不能直接当作纯关系信息量**。
-
-### E1.4 Nonlinear Probe 和跨层稳定性
-
-- 选出若干候选峰值层，训练容量受限的 2-layer MLP Probe（例如隐藏维 256）复核。
-- 如 Linear Probe 下降而 MLP Probe 保持较高准确率，只能说线性可解码性下降，不能下结论“信息消失”。
-- 同时绘制：关系 Probe、Claim-only Probe、偏差类型 Probe、关系反事实 PairCorrect 的层级曲线。
-- 若偏差属性与标签相关，用条件分层/平衡重采样 Probe，防止标签分布混淆。
-
-### E1.5 Latent Decoder Probe（更接近 CoSToM）
-
-除线性 Probe，还训练一个**独立校准的 Activation Decoder**：冻结原始 Encoder，取某层激活，仅提供激活与诊断问题给 Decoder，不直接提供 Claim/Evidence 原文；让 Decoder 输出关系标签。
-
-重要：
-
-- Decoder 的 Activation 注入接口须先训练/校准（见 E3a），否则随机向量空间映射读不出关系并不能否定内部编码。
-- 比较不同层时，使用统一 Decoder 容量和相同数量的训练样本；如需每层独立投影器，投影器参数量要保持一致。
-- Decoder Probe 可作为补充，不替代 Linear Probe 和 E2 的因果实验。
-
-### E1.6 输出与层筛选规则
-
-导出：
-
-```text
-outputs/e1_probes/
-  layer_probe_metrics.csv
-  layer_position_metrics.csv
-  relation_vs_claimonly.png
-  relation_vs_bias.png
-  paircorrect_by_layer.png
-  candidate_layers_from_probe.json
-```
-
-**只按 dev 选择** Top-`k` 候选层进入 E2，例如 `k=6`；后续最终训练层应结合 E2 因果结果确定，不能仅按 Probe 峰值确定。
+同 Claim、相反 Evidence 配对的人工审核可使用 [离线审核页面](outputs/experiment_runs/e2_vitaminc_review_queue_300/review.html)，操作和导出格式见 [审核页面说明](docs/VITAMINC_REVIEW_UI.md)。
 
 ---
 

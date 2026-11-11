@@ -15,6 +15,7 @@ PROMPT_VERSION = "v1_anchor_last_plain"
 VERDICT_PROMPT_VERSIONS = {
     "fever3": "v2_fact_checking_answer",
     "binary_support": "v3_binary_supported_not_supported",
+    "fever_binary": "v4_fever_binary_supports_refutes",
 }
 
 
@@ -22,6 +23,10 @@ def verdict_verbalizers(labels: Sequence[str], scheme: str) -> list[str]:
     """Surface answers in score order; dataset labels stay canonical."""
     if scheme == "fever3":
         mapping = {"SUPPORTS": "SUPPORTS", "REFUTES": "REFUTES", "NEI": "NEI"}
+    elif scheme == "fever_binary":
+        if list(labels) != ["SUPPORTS", "REFUTES"]:
+            raise ValueError("Binary FEVER prompt requires SUPPORTS/REFUTES labels")
+        mapping = {"SUPPORTS": "SUPPORTS", "REFUTES": "REFUTES"}
     elif scheme == "binary_support":
         mapping = {"SUPPORTS": "SUPPORTED", "REFUTES": "NOT_SUPPORTED"}
         if list(labels) != ["SUPPORTS", "REFUTES"]:
@@ -112,6 +117,17 @@ def render_verdict(row: dict, condition: str = "full", scheme: str = "fever3") -
             f"Claim: {claim}\n"
             f"Evidence: {evidence}\n"
         )
+    elif scheme == "fever_binary":
+        prompt = (
+            "You are a fact-checking assistant.\n\n"
+            "Determine whether the evidence supports or refutes the claim, using only the provided evidence.\n\n"
+            "Labels:\n"
+            "SUPPORTS: The evidence entails the claim.\n"
+            "REFUTES: The evidence contradicts the claim.\n\n"
+            "Return exactly one label: SUPPORTS or REFUTES.\n\n"
+            f"Claim: {claim}\n"
+            f"Evidence: {evidence}\n"
+        )
     elif scheme == "binary_support":
         prompt = (
             "You are an evidence-based fact verification assistant.\n\n"
@@ -133,7 +149,7 @@ def render_verdict(row: dict, condition: str = "full", scheme: str = "fever3") -
     if condition == "full_bias" and row.get("claim_metadata"):
         prompt += "Claim metadata: " + ", ".join(
             f"{key}={value}" for key, value in sorted(row["claim_metadata"].items())) + "\n"
-    return prompt + ("\nAnswer:" if scheme == "fever3" else "\nLabel:")
+    return prompt + ("\nAnswer:" if scheme in {"fever3", "fever_binary"} else "\nLabel:")
 
 
 def render_decoder(row: dict | None = None, guided: bool = False, slot: str = "<latent>",

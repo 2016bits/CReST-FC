@@ -25,6 +25,12 @@ To evaluate HOVER, PolitiHop, symmetric PolitiHop, FEVER and symmetric FEVER wit
 
 The revised FEVER E0 classification prompt is `v2_fact_checking_answer` and defines SUPPORTS, REFUTES and NEI explicitly. E1/E2 keep their separate `Relation anchor:` input.
 
+The new primary E1 implementation follows [training-free E1-B](E1B_FROZEN_READER.md): frozen full-sequence activation reading, Decoder Block 0 injection, complete-label likelihoods, paired controls and review-gated dev selection. The historical supervised FEVER Linear Probe remains below for reproduction and for existing E1.5/E2 artifacts; it is no longer the primary E1 protocol.
+
+The full VitaminC dev claim-flip scan of all 28 read layers, with Full and Claim-only Macro-F1 plus same-evidence Claim Flip metrics, is documented in [E1-B VitaminC Claim Flip](E1B_VITAMINC_CLAIMFLIP.md).
+
+Frozen Qwen2.5-7B E0 generation with the exact E1 snapshot, strict raw-label parsing, resume support, and a separate binary FEVER option is documented in [7B E0 instructions](E0_7B.md). The earlier 0.5B E0 uses candidate-sequence scoring, so compare those protocols separately.
+
 Current E0 routing: FEVER uses the three-label `v2_fact_checking_answer` prompt and scores SUPPORTS/REFUTES/NEI. HOVER, PolitiHop, symmetric-PolitiHop and symmetric-FEVER use the two-label `v3_binary_supported_not_supported` prompt; `SUPPORTED` scores map to canonical `SUPPORTS`, and `NOT_SUPPORTED` scores map to canonical `REFUTES`. The raw labels and stored gold labels are unchanged. Run with `bash scripts/run_e0.sh e0_dataset_prompts` (or add `20` for a smoke test). The linked EGR-FV FEVER converted train/dev/test files have **no NEI ground truth**; this is a three-option inference setup on a two-class subset, not a complete FEVER three-class evaluation. Supplying official NEI examples with audited insufficient evidence is required for that claim.
 
 ### FEVER binary layer probes on Qwen2.5-7B

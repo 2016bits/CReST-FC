@@ -16,6 +16,7 @@ from transformers import AutoTokenizer
 
 from crestfc.data import normalize_label
 from crestfc.modeling import render_verdict, verdict_verbalizers
+from crestfc.evaluation import parse_generated_verdict
 
 ROOT = Path(__file__).resolve().parents[1]
 NAMES = ("hover", "politihop", "symmetric_politihop", "fever", "symmetric_fever")
@@ -37,13 +38,14 @@ def read_jsonl(path: Path) -> list[dict]:
 def check(name: str, run: Path, tokenizer, max_positions: int) -> dict:
     base = run / name
     cfg = yaml.safe_load((base / "baseline.yaml").read_text(encoding="utf8"))
+    evaluated_conditions = cfg.get("conditions", list(CONDITIONS))
     prep = yaml.safe_load((base / "prepare.yaml").read_text(encoding="utf8"))
     source = Path(prep["source"]["path"])
     raw = json.loads(source.read_text(encoding="utf8"))
     samples = read_jsonl(base / "data/samples.jsonl")
     predictions = read_jsonl(base / "e0/predictions.jsonl")
     metrics = {condition: json.loads((base / "e0" / f"metrics_{condition}.json").read_text())
-               for condition in CONDITIONS}
+               for condition in evaluated_conditions}
     scheme, labels = cfg["verdict_scheme"], cfg["labels"]
     verbalizers = verdict_verbalizers(labels, scheme)
     by_id = {row["sample_id"]: row for row in samples}
@@ -110,19 +112,24 @@ def check(name: str, run: Path, tokenizer, max_positions: int) -> dict:
     by_condition = defaultdict(dict)
     for item in predictions:
         condition, sample_id = item["condition"], item["sample_id"]
-        if condition not in CONDITIONS or sample_id not in by_id or sample_id in by_condition[condition]:
+        if condition not in evaluated_conditions or sample_id not in by_id or sample_id in by_condition[condition]:
             errors["prediction_key_invalid_or_duplicate"] += 1
             continue
         by_condition[condition][sample_id] = item
         if item["gold"] != by_id[sample_id]["label"]:
             errors["prediction_gold_mismatch"] += 1
-        if len(item["scores"]) != len(labels) or not all(math.isfinite(score) for score in item["scores"]):
-            errors["score_invalid"] += 1
-            continue
-        winner = max(range(len(labels)), key=lambda i: item["scores"][i])
-        if item["prediction"] != labels[winner] or item["prediction_surface"] != verbalizers[winner]:
-            errors["prediction_argmax_or_mapping_mismatch"] += 1
-    for condition in CONDITIONS:
+        if item.get("inference_mode") == "generate":
+            label, surface = parse_generated_verdict(item.get("raw_output", ""), labels, verbalizers)
+            if item["prediction"] != label or item["prediction_surface"] != surface:
+                errors["generation_parse_or_mapping_mismatch"] += 1
+        else:
+            if len(item["scores"]) != len(labels) or not all(math.isfinite(score) for score in item["scores"]):
+                errors["score_invalid"] += 1
+                continue
+            winner = max(range(len(labels)), key=lambda i: item["scores"][i])
+            if item["prediction"] != labels[winner] or item["prediction_surface"] != verbalizers[winner]:
+                errors["prediction_argmax_or_mapping_mismatch"] += 1
+    for condition in evaluated_conditions:
         pred = by_condition[condition]
         if len(pred) != len(samples):
             errors[f"{condition}_prediction_count_mismatch"] += 1
@@ -174,8 +181,10 @@ def main() -> None:
     snapshot = sorted(path for path in snapshots.glob("*") if (path / "config.json").is_file())[-1]
     model_config = json.loads((snapshot / "config.json").read_text())
     tokenizer = AutoTokenizer.from_pretrained(str(snapshot), local_files_only=True, use_fast=True)
+    launcher_path = run / "launcher_manifest.json"
+    names = json.loads(launcher_path.read_text())["datasets"] if launcher_path.exists() else NAMES
     report = {"run_id": args.run_id, "model_id": spec["id"],
-              "datasets": [check(name, run, tokenizer, model_config["max_position_embeddings"]) for name in NAMES]}
+              "datasets": [check(name, run, tokenizer, model_config["max_position_embeddings"]) for name in names]}
     output = run / "e0_integrity_audit.json"
     output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf8")
     print(json.dumps(report, ensure_ascii=False, indent=2))

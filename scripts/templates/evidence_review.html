@@ -1,0 +1,537 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CReST · Evidence Flip 人工审核</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #18233b;
+      --muted: #64718b;
+      --line: #dfe5ef;
+      --paper: #ffffff;
+      --wash: #f5f7fb;
+      --blue: #355eea;
+      --blue-soft: #eaf0ff;
+      --green: #087c61;
+      --green-soft: #e6f6ee;
+      --red: #b94745;
+      --red-soft: #fff0ed;
+      --amber: #9a6200;
+      --amber-soft: #fff5df;
+      --shadow: 0 14px 40px rgba(28, 42, 75, .07);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--ink); background: var(--wash); font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    button, input, textarea, select { font: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid #93a9ff; outline-offset: 2px; }
+    .app { min-height: 100vh; display: grid; grid-template-columns: 318px minmax(0, 1fr); }
+    .sidebar { height: 100vh; position: sticky; top: 0; overflow: auto; padding: 24px 20px 20px; border-right: 1px solid var(--line); background: #fbfcff; }
+    .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 24px; }
+    .brand-mark { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; background: var(--ink); color: white; font-weight: 800; letter-spacing: -.05em; }
+    .brand strong { display: block; font-size: 16px; line-height: 1.15; }
+    .brand small { display: block; color: var(--muted); font-size: 11px; letter-spacing: .09em; text-transform: uppercase; }
+    h1 { font-size: 25px; letter-spacing: -.04em; line-height: 1.2; margin: 0 0 8px; }
+    h2 { font-size: 18px; letter-spacing: -.02em; margin: 0; }
+    p { margin: 0; }
+    .muted { color: var(--muted); }
+    .small { font-size: 12px; }
+    .eyebrow { color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
+    .side-intro { margin-bottom: 18px; color: var(--muted); font-size: 13px; }
+    .field-label { display: block; margin: 16px 0 6px; font-size: 12px; font-weight: 800; color: #4f5d77; }
+    input[type="text"], input[type="search"], textarea { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; color: var(--ink); background: white; }
+    input::placeholder, textarea::placeholder { color: #9da8b8; }
+    .progress-card { margin: 20px 0; padding: 16px; border-radius: 14px; background: white; border: 1px solid var(--line); box-shadow: var(--shadow); }
+    .progress-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .progress-number { font-size: 23px; font-weight: 800; letter-spacing: -.04em; }
+    .progress-track { height: 8px; overflow: hidden; margin: 10px 0 12px; border-radius: 20px; background: #e8edf6; }
+    .progress-fill { height: 100%; width: 0; border-radius: inherit; background: linear-gradient(90deg, #3d70f5, #29a783); transition: width .2s; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; font-size: 11px; color: var(--muted); text-align: center; }
+    .stats b { display: block; color: var(--ink); font-size: 16px; }
+    .toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 16px 0 9px; }
+    .btn { border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; background: white; color: var(--ink); font-weight: 700; transition: background .15s, transform .15s; }
+    .btn:hover { background: #f1f5ff; transform: translateY(-1px); }
+    .btn:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+    .btn.primary { border-color: var(--blue); background: var(--blue); color: white; }
+    .btn.primary:hover { background: #264bd2; }
+    .btn.success { border-color: var(--green); background: var(--green); color: white; }
+    .btn.danger { border-color: #f1c7c3; background: var(--red-soft); color: var(--red); }
+    .btn.warn { border-color: #efdbad; background: var(--amber-soft); color: var(--amber); }
+    .filter-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+    .filter { border: 1px solid var(--line); border-radius: 20px; padding: 5px 9px; background: white; color: var(--muted); font-size: 12px; font-weight: 700; }
+    .filter.active { border-color: #bdcafa; background: var(--blue-soft); color: #2849c1; }
+    .list-heading { display: flex; justify-content: space-between; align-items: center; margin: 16px 2px 8px; }
+    .pair-list { display: grid; gap: 6px; }
+    .pair-item { width: 100%; text-align: left; padding: 10px 11px; border: 1px solid transparent; border-radius: 11px; background: transparent; }
+    .pair-item:hover { background: #eef2fa; }
+    .pair-item.active { border-color: #b9c8ff; background: var(--blue-soft); }
+    .pair-item-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; }
+    .pair-item-claim { display: -webkit-box; overflow: hidden; -webkit-line-clamp: 2; -webkit-box-orient: vertical; margin-top: 3px; color: var(--ink); font-size: 13px; font-weight: 650; }
+    .status-dot { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: #bac3d1; }
+    .status-dot.approved { background: var(--green); }
+    .status-dot.rejected { background: var(--red); }
+    .status-dot.uncertain { background: #d69a17; }
+    .main { max-width: 1490px; width: 100%; margin: 0 auto; padding: 30px clamp(20px, 4vw, 58px) 70px; }
+    .topline { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
+    .topline-actions { display: flex; gap: 8px; }
+    .offline-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 20px; background: #ebf5f1; color: var(--green); font-size: 12px; font-weight: 750; }
+    .offline-badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #31aa85; }
+    .panel { border: 1px solid var(--line); border-radius: 16px; background: white; box-shadow: var(--shadow); }
+    .case-head { padding: clamp(22px, 3vw, 36px); margin-bottom: 17px; }
+    .case-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-bottom: 15px; }
+    .pill { padding: 4px 9px; border-radius: 8px; background: #eef2f8; color: #52627c; font-size: 12px; font-weight: 750; }
+    .case-id { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+    .claim { font-size: clamp(21px, 2.2vw, 29px); font-weight: 760; line-height: 1.35; letter-spacing: -.02em; overflow-wrap: anywhere; margin: 8px 0 0; }
+    .evidence-header { display: flex; justify-content: space-between; align-items: end; gap: 16px; margin: 26px 0 12px; }
+    .legend { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
+    .legend-mark { width: 12px; height: 12px; border-radius: 3px; background: #ffe3aa; }
+    .evidence-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .evidence-card { min-height: 200px; padding: 23px 24px 26px; }
+    .evidence-card.supports { border-top: 4px solid #38a67f; }
+    .evidence-card.refutes { border-top: 4px solid #e18473; }
+    .evidence-title { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 15px; }
+    .label-pill { padding: 4px 9px; border-radius: 7px; font-size: 12px; font-weight: 850; letter-spacing: .02em; }
+    .label-pill.supports { background: var(--green-soft); color: var(--green); }
+    .label-pill.refutes { background: var(--red-soft); color: var(--red); }
+    .sample-id { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+    .evidence-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 16px; line-height: 1.8; }
+    .changed { border-radius: 3px; background: #ffe3aa; box-shadow: 0 0 0 2px #ffe3aa; }
+    .review-panel { margin-top: 24px; padding: clamp(22px, 3vw, 34px); }
+    .review-heading { display: flex; justify-content: space-between; gap: 12px; align-items: start; flex-wrap: wrap; padding-bottom: 17px; border-bottom: 1px solid var(--line); }
+    .review-status { border-radius: 20px; padding: 5px 11px; font-size: 12px; font-weight: 800; background: #edf0f5; color: #5f6b7e; }
+    .review-status.approved { background: var(--green-soft); color: var(--green); }
+    .review-status.rejected { background: var(--red-soft); color: var(--red); }
+    .review-status.uncertain { background: var(--amber-soft); color: var(--amber); }
+    .criteria { display: grid; gap: 0; margin: 9px 0 17px; }
+    .criterion { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 14px 0; border-bottom: 1px solid #edf0f5; }
+    .criterion-copy { min-width: 0; }
+    .criterion-copy strong { display: block; font-size: 14px; }
+    .criterion-copy small { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
+    .choice-group { display: flex; flex: 0 0 auto; gap: 5px; }
+    .choice { min-width: 53px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; background: white; color: #66738a; font-size: 12px; font-weight: 750; }
+    .choice.yes.active { border-color: #98d4bc; background: var(--green-soft); color: var(--green); }
+    .choice.no.active { border-color: #ecb9b0; background: var(--red-soft); color: var(--red); }
+    .choice.unknown.active { border-color: #e9d8ae; background: var(--amber-soft); color: var(--amber); }
+    textarea { resize: vertical; min-height: 76px; }
+    .review-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-top: 16px; }
+    .review-footer .hint { flex: 1 1 240px; color: var(--muted); font-size: 12px; }
+    .footnote { margin-top: 19px; color: var(--muted); font-size: 12px; }
+    .notice { display: none; position: fixed; right: 20px; bottom: 20px; z-index: 5; max-width: 460px; padding: 12px 15px; border-radius: 10px; box-shadow: var(--shadow); background: #24324c; color: white; font-size: 13px; }
+    .notice.show { display: block; }
+    .notice.error { background: #9d3334; }
+    .empty { padding: 24px 14px; color: var(--muted); text-align: center; font-size: 13px; }
+    @media (max-width: 900px) {
+      .app { display: block; }
+      .sidebar { height: auto; position: static; border-right: 0; border-bottom: 1px solid var(--line); }
+      .pair-list { max-height: 230px; overflow: auto; }
+      .main { padding: 22px 16px 50px; }
+    }
+    @media (max-width: 650px) {
+      .evidence-grid { grid-template-columns: 1fr; }
+      .criterion { display: block; }
+      .choice-group { margin-top: 9px; }
+      .case-head, .review-panel { padding: 20px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand"><div class="brand-mark">C</div><div><strong>CReST 审核台</strong><small>Evidence flip review</small></div></div>
+      <h1>事实关系审核</h1>
+      <p class="side-intro">同一 Claim · 两条 Evidence · 逐项判断。所有数据保存在本地浏览器，并可导出 JSONL。</p>
+      <label class="field-label" for="reviewer-name">当前审核员姓名</label>
+      <input id="reviewer-name" type="text" autocomplete="name" placeholder="填写后才能提交审核结果">
+      <div class="progress-card">
+        <div class="progress-top"><span class="eyebrow">审核进度</span><span class="progress-number" id="progress-number">0 / 0</span></div>
+        <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+        <div class="stats"><span><b id="count-approved">0</b>通过</span><span><b id="count-rejected">0</b>驳回</span><span><b id="count-uncertain">0</b>待讨论</span><span><b id="count-pending">0</b>未完成</span></div>
+      </div>
+      <div class="toolbar">
+        <button class="btn primary" id="export-button" type="button">导出 JSONL</button>
+        <button class="btn" id="import-button" type="button">导入进度</button>
+      </div>
+      <input id="import-file" type="file" accept=".jsonl,.json,text/plain" hidden>
+      <p class="small muted" id="save-state">更改会尝试自动保存在当前浏览器。请定期导出 JSONL 备份。</p>
+      <label class="field-label" for="search-box">查找样本</label>
+      <input id="search-box" type="search" placeholder="Claim、Evidence 或 Pair ID">
+      <div class="filter-row" id="filter-row">
+        <button class="filter active" data-filter="all" type="button">全部</button>
+        <button class="filter" data-filter="pending" type="button">未完成</button>
+        <button class="filter" data-filter="approved" type="button">通过</button>
+        <button class="filter" data-filter="rejected" type="button">驳回</button>
+        <button class="filter" data-filter="uncertain" type="button">待讨论</button>
+      </div>
+      <div class="list-heading"><span class="eyebrow">样本列表</span><span class="small muted" id="list-count"></span></div>
+      <div class="pair-list" id="pair-list" aria-label="审核样本列表"></div>
+    </aside>
+
+    <main class="main">
+      <div class="topline"><span class="offline-badge">离线审核页面</span><div class="topline-actions"><button class="btn" id="previous-button" type="button">← 上一条</button><button class="btn" id="next-button" type="button">下一条 →</button></div></div>
+      <section class="case-head panel">
+        <div class="case-meta"><span class="pill" id="case-number">第 1 条</span><span class="pill" id="case-similarity">文本相似度 —</span><span class="case-id" id="case-id"></span><span class="case-id" id="case-family"></span></div>
+        <span class="eyebrow">待核查 Claim</span>
+        <p class="claim" id="claim-text"></p>
+      </section>
+
+      <div class="evidence-header"><div><span class="eyebrow">并排证据</span><h2>核对事实变化</h2></div><span class="legend"><span class="legend-mark"></span>高亮表示文本差异，仍需判断事实含义</span></div>
+      <div class="evidence-grid">
+        <section class="evidence-card supports panel" aria-label="标注为 SUPPORTS 的证据"><div class="evidence-title"><span class="label-pill supports">SUPPORTS 来源标注</span><span class="sample-id" id="supports-id"></span></div><div class="evidence-text" id="supports-text"></div></section>
+        <section class="evidence-card refutes panel" aria-label="标注为 REFUTES 的证据"><div class="evidence-title"><span class="label-pill refutes">REFUTES 来源标注</span><span class="sample-id" id="refutes-id"></span></div><div class="evidence-text" id="refutes-text"></div></section>
+      </div>
+
+      <section class="review-panel panel">
+        <div class="review-heading"><div><span class="eyebrow">人工判断</span><h2>五项审核条件</h2><p class="small muted">请根据证据内容判断；来源标签与高亮差异都不能代替审核。</p></div><span class="review-status" id="review-status">未完成</span></div>
+        <div class="criteria" id="criteria"></div>
+        <label class="field-label" for="review-notes">备注 / 驳回理由（可选）</label>
+        <textarea id="review-notes" placeholder="记录争议点、证据不足原因或需要讨论的问题"></textarea>
+        <div class="review-footer"><span class="hint" id="action-hint">五项均为“通过”才能批准；至少一项“不通过”才能驳回。</span><button class="btn" id="reset-button" type="button">撤销结论</button><button class="btn warn" id="uncertain-button" type="button">待讨论</button><button class="btn danger" id="reject-button" type="button">驳回</button><button class="btn success" id="approve-button" type="button">五项通过，批准</button></div>
+        <p class="footnote" id="reviewed-by"></p>
+      </section>
+      <p class="footnote">快捷键：J / K 切换样本，Ctrl/⌘ + S 导出。浏览器本地存储可能因隐私设置或清理缓存而失效，请定期导出 JSONL。</p>
+    </main>
+  </div>
+  <div id="notice" class="notice" role="status" aria-live="polite"></div>
+
+  <script id="review-data" type="application/json">__REVIEW_DATA_JSON__</script>
+  <script>
+  (() => {
+    "use strict";
+    const dataset = JSON.parse(document.getElementById("review-data").textContent);
+    const items = dataset.pairs;
+    const byId = new Map(items.map(item => [item.pair_id, item]));
+    const storageKey = "crestfc_review_v1_" + dataset.source_sha256;
+    const criteriaInfo = [
+      ["claim_unchanged", "Claim 是否保持不变", "两条证据核对的是同一个 Claim。"],
+      ["evidence_changed", "Evidence 是否有实质变化", "文本变化涉及会影响事实关系的内容。"],
+      ["supports_label_correct", "左侧证据是否支持 Claim", "只根据左侧 Evidence 判断来源 SUPPORTS 标注。"],
+      ["refutes_label_correct", "右侧证据是否反驳 Claim", "只根据右侧 Evidence 判断来源 REFUTES 标注。"],
+      ["evidence_sufficient", "两侧证据是否都足够", "两条证据分别足以作出上述关系判断。"]
+    ];
+    const statusNames = {pending: "未完成", approved: "已通过", rejected: "已驳回", uncertain: "待讨论"};
+    const $ = id => document.getElementById(id);
+    let answers = {};
+    let currentId = items.length ? items[0].pair_id : null;
+    let activeFilter = "all";
+    let search = "";
+    let reviewerName = "";
+    let noticeTimer;
+
+    function emptyReview() {
+      return {fields: Object.fromEntries(dataset.fields.map(key => [key, null])),
+              decision: "pending", reviewer: null, notes: "", reviewed_at: null};
+    }
+    function getReview(id) { return answers[id] || emptyReview(); }
+    function statusOf(id) { return getReview(id).decision || "pending"; }
+    function toast(message, error = false) {
+      const node = $("notice");
+      node.textContent = message;
+      node.className = "notice show" + (error ? " error" : "");
+      clearTimeout(noticeTimer);
+      noticeTimer = setTimeout(() => node.className = "notice", 4500);
+    }
+    function save() {
+      try {
+        localStorage.setItem(storageKey, JSON.stringify({source_sha256: dataset.source_sha256,
+          reviewerName, answers}));
+        $("save-state").textContent = "已自动保存到当前浏览器；请定期导出 JSONL 备份。";
+      } catch (_) {
+        $("save-state").textContent = "浏览器无法自动保存。请每次审核后导出 JSONL 备份。";
+      }
+    }
+    function restore() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(storageKey) || "null");
+        if (saved && saved.source_sha256 === dataset.source_sha256) {
+          reviewerName = typeof saved.reviewerName === "string" ? saved.reviewerName : "";
+          for (const [id, value] of Object.entries(saved.answers || {})) {
+            if (byId.has(id)) answers[id] = normalizeReview(value);
+          }
+        }
+      } catch (_) { /* The import button remains available if local storage cannot be read. */ }
+      $("reviewer-name").value = reviewerName;
+    }
+    function normalizeReview(raw) {
+      const review = emptyReview();
+      for (const key of dataset.fields) {
+        const value = raw.fields && Object.prototype.hasOwnProperty.call(raw.fields, key)
+          ? raw.fields[key] : raw[key];
+        review.fields[key] = value === true ? true : value === false ? false : null;
+      }
+      review.reviewer = typeof raw.reviewer === "string" && raw.reviewer.trim() ? raw.reviewer.trim() : null;
+      review.notes = typeof raw.notes === "string" ? raw.notes : "";
+      review.reviewed_at = typeof raw.reviewed_at === "string" ? raw.reviewed_at : null;
+      const requested = raw.decision || raw.review_decision || (raw.approved === true ? "approved" : "pending");
+      if (requested === "approved" && review.reviewer && dataset.fields.every(k => review.fields[k] === true))
+        review.decision = "approved";
+      else if (requested === "rejected" && review.reviewer && dataset.fields.some(k => review.fields[k] === false))
+        review.decision = "rejected";
+      else if (requested === "uncertain" && review.reviewer)
+        review.decision = "uncertain";
+      return review;
+    }
+    function visibleItems() {
+      return items.filter(item => {
+        if (activeFilter !== "all" && statusOf(item.pair_id) !== activeFilter) return false;
+        if (!search) return true;
+        const corpus = [item.pair_id, item.claim,
+          ...item.supports_evidence.map(x => x.text), ...item.refutes_evidence.map(x => x.text)]
+          .join(" ").toLocaleLowerCase();
+        return corpus.includes(search);
+      });
+    }
+    function renderProgress() {
+      const counts = {approved: 0, rejected: 0, uncertain: 0, pending: 0};
+      for (const item of items) counts[statusOf(item.pair_id)]++;
+      const completed = items.length - counts.pending;
+      $("progress-number").textContent = completed + " / " + items.length;
+      $("progress-fill").style.width = (items.length ? completed / items.length * 100 : 0) + "%";
+      for (const name of Object.keys(counts)) $("count-" + name).textContent = counts[name];
+    }
+    function renderList() {
+      const list = $("pair-list");
+      list.replaceChildren();
+      const shown = visibleItems();
+      $("list-count").textContent = shown.length + " / " + items.length;
+      if (!shown.length) {
+        const empty = document.createElement("div"); empty.className = "empty";
+        empty.textContent = "当前筛选没有样本。"; list.append(empty);
+        return;
+      }
+      const fragment = document.createDocumentFragment();
+      for (const item of shown) {
+        const index = items.indexOf(item) + 1;
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "pair-item" + (item.pair_id === currentId ? " active" : "");
+        button.setAttribute("aria-current", item.pair_id === currentId ? "true" : "false");
+        const head = document.createElement("div"); head.className = "pair-item-head";
+        const number = document.createElement("span"); number.textContent = "#" + index;
+        const marker = document.createElement("span"); marker.className = "status-dot " + statusOf(item.pair_id);
+        marker.title = statusNames[statusOf(item.pair_id)];
+        head.append(number, marker);
+        const claim = document.createElement("div"); claim.className = "pair-item-claim";
+        claim.textContent = item.claim;
+        button.append(head, claim);
+        button.addEventListener("click", () => show(item.pair_id));
+        fragment.append(button);
+      }
+      list.append(fragment);
+    }
+    function renderSegments(container, segments) {
+      const fragment = document.createDocumentFragment();
+      for (const segment of segments) {
+        const span = document.createElement("span");
+        if (segment.changed) span.className = "changed";
+        span.textContent = segment.text;
+        fragment.append(span);
+      }
+      container.replaceChildren(fragment);
+    }
+    function renderCriteria(review) {
+      const panel = $("criteria"); panel.replaceChildren();
+      for (const [key, title, description] of criteriaInfo) {
+        const row = document.createElement("div"); row.className = "criterion";
+        const copy = document.createElement("div"); copy.className = "criterion-copy";
+        const strong = document.createElement("strong"); strong.textContent = title;
+        const small = document.createElement("small"); small.textContent = description;
+        copy.append(strong, small);
+        const choices = document.createElement("div"); choices.className = "choice-group";
+        choices.setAttribute("role", "group"); choices.setAttribute("aria-label", title);
+        for (const [value, label, style] of [[true, "通过", "yes"], [false, "不通过", "no"], [null, "待定", "unknown"]]) {
+          const button = document.createElement("button"); button.type = "button";
+          button.className = "choice " + style + (review.fields[key] === value ? " active" : "");
+          button.textContent = label;
+          button.setAttribute("aria-pressed", review.fields[key] === value ? "true" : "false");
+          button.addEventListener("click", () => {
+            const next = getReview(currentId);
+            next.fields[key] = value;
+            next.decision = "pending";
+            next.reviewer = null;
+            next.reviewed_at = null;
+            answers[currentId] = next;
+            save(); renderProgress(); renderList(); renderCurrent();
+          });
+          choices.append(button);
+        }
+        row.append(copy, choices); panel.append(row);
+      }
+    }
+    function renderCurrent() {
+      if (!currentId) return;
+      const item = byId.get(currentId);
+      const review = getReview(currentId);
+      $("case-number").textContent = "第 " + (items.indexOf(item) + 1) + " / " + items.length + " 条";
+      $("case-similarity").textContent = item.evidence_similarity == null
+        ? "文本相似度 —" : "文本相似度 " + (100 * item.evidence_similarity).toFixed(1) + "%";
+      $("case-id").textContent = item.pair_id;
+      $("case-family").textContent = "家族：" + item.source_family;
+      $("claim-text").textContent = item.claim;
+      $("supports-id").textContent = item.supports_id;
+      $("refutes-id").textContent = item.refutes_id;
+      renderSegments($("supports-text"), item.supports_segments);
+      renderSegments($("refutes-text"), item.refutes_segments);
+      renderCriteria(review);
+      $("review-notes").value = review.notes;
+      const badge = $("review-status");
+      badge.className = "review-status " + review.decision;
+      badge.textContent = statusNames[review.decision];
+      $("reviewed-by").textContent = review.reviewer
+        ? "审核员：" + review.reviewer + (review.reviewed_at ? " · " + review.reviewed_at : "") : "";
+      const allYes = dataset.fields.every(key => review.fields[key] === true);
+      const anyNo = dataset.fields.some(key => review.fields[key] === false);
+      $("approve-button").disabled = !allYes;
+      $("reject-button").disabled = !anyNo;
+      $("action-hint").textContent = allYes ? "五项已通过；提交时还需填写审核员姓名。"
+        : anyNo ? "存在不通过项；可驳回或标记待讨论。"
+        : "五项均为“通过”才能批准；至少一项“不通过”才能驳回。";
+    }
+    function show(id) {
+      if (!byId.has(id)) return;
+      currentId = id;
+      renderCurrent(); renderList();
+      window.scrollTo(0, 0);
+    }
+    function navigate(delta) {
+      const shown = visibleItems();
+      if (!shown.length) return;
+      const index = shown.findIndex(item => item.pair_id === currentId);
+      const next = index < 0 ? 0 : (index + delta + shown.length) % shown.length;
+      show(shown[next].pair_id);
+    }
+    function decide(decision) {
+      if (!currentId) return;
+      const name = reviewerName.trim();
+      if (!name) { toast("请先填写当前审核员姓名。", true); $("reviewer-name").focus(); return; }
+      const review = getReview(currentId);
+      if (decision === "approved" && !dataset.fields.every(key => review.fields[key] === true)) {
+        toast("五项条件都必须明确通过才能批准。", true); return;
+      }
+      if (decision === "rejected" && !dataset.fields.some(key => review.fields[key] === false)) {
+        toast("请至少标记一项“不通过”并说明驳回原因。", true); return;
+      }
+      review.decision = decision;
+      review.reviewer = name;
+      review.reviewed_at = new Date().toISOString();
+      answers[currentId] = review;
+      save(); renderProgress(); renderCurrent(); renderList();
+      toast("已保存：" + statusNames[decision]);
+      const currentIndex = items.findIndex(item => item.pair_id === currentId);
+      const after = items.slice(currentIndex + 1).concat(items.slice(0, currentIndex));
+      const visible = new Set(visibleItems().map(item => item.pair_id));
+      const next = after.find(item => visible.has(item.pair_id) && statusOf(item.pair_id) === "pending");
+      if (next) show(next.pair_id);
+    }
+    function resetDecision() {
+      if (!currentId) return;
+      const review = getReview(currentId);
+      review.decision = "pending";
+      review.reviewer = null;
+      review.reviewed_at = null;
+      answers[currentId] = review;
+      save(); renderProgress(); renderCurrent(); renderList();
+      toast("已撤销结论，五项判断和备注仍保留。");
+    }
+    function exportJsonl() {
+      const lines = items.map(item => {
+        const review = getReview(item.pair_id);
+        const approved = review.decision === "approved" && Boolean(review.reviewer) &&
+          dataset.fields.every(key => review.fields[key] === true);
+        return JSON.stringify({pair_id: item.pair_id, source_family: item.source_family,
+          source_sha256: dataset.source_sha256, claim: item.claim,
+          supports_evidence: item.supports_evidence, refutes_evidence: item.refutes_evidence,
+          approved, reviewer: review.reviewer, ...review.fields,
+          review_decision: review.decision, notes: review.notes, reviewed_at: review.reviewed_at});
+      });
+      const blob = new Blob([lines.join("\n") + "\n"], {type: "application/x-ndjson;charset=utf-8"});
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "vitaminc_dev_300_reviews.jsonl";
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast("已导出 " + items.length + " 条 JSONL，请妥善保存文件。 ");
+    }
+    async function importJsonl(file) {
+      if (!file) return;
+      let parsed;
+      try {
+        const text = await file.text();
+        parsed = text.split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line));
+        const seen = new Set();
+        for (const row of parsed) {
+          const item = byId.get(row.pair_id);
+          if (!item || seen.has(row.pair_id)) throw new Error("未知或重复 Pair ID：" + row.pair_id);
+          seen.add(row.pair_id);
+          if (row.source_sha256 && row.source_sha256 !== dataset.source_sha256)
+            throw new Error("导入文件来自不同的配对数据。");
+          if (row.claim !== item.claim || JSON.stringify(row.supports_evidence) !== JSON.stringify(item.supports_evidence)
+              || JSON.stringify(row.refutes_evidence) !== JSON.stringify(item.refutes_evidence))
+            throw new Error("Claim 或 Evidence 与当前审核集不一致：" + row.pair_id);
+        }
+      } catch (error) { toast("导入失败：" + error.message, true); return; }
+      const incoming = parsed.map(row => [row.pair_id, normalizeReview(row)]);
+      const conflicts = incoming.filter(([id, review]) => {
+        const existing = getReview(id);
+        return review.decision !== "pending" && existing.decision !== "pending" &&
+          JSON.stringify(review) !== JSON.stringify(existing);
+      });
+      if (conflicts.length && !window.confirm("有 " + conflicts.length +
+          " 条已审核记录与导入文件不同。是否用导入文件覆盖这些记录？")) return;
+      let applied = 0;
+      for (const [id, review] of incoming) {
+        const existing = getReview(id);
+        if (review.decision === "pending" && existing.decision !== "pending") continue;
+        if (review.decision === "pending" && existing.decision === "pending" && existing.notes && !review.notes) continue;
+        answers[id] = review; applied++;
+      }
+      save(); renderProgress(); renderList(); renderCurrent();
+      toast("已导入 " + applied + " 条，保留了本地已有的完成记录。");
+    }
+
+    $("reviewer-name").addEventListener("input", event => { reviewerName = event.target.value; save(); });
+    $("review-notes").addEventListener("input", event => {
+      if (!currentId) return;
+      const review = getReview(currentId); review.notes = event.target.value;
+      answers[currentId] = review; save();
+    });
+    $("search-box").addEventListener("input", event => {
+      search = event.target.value.trim().toLocaleLowerCase();
+      const shown = visibleItems(); if (shown.length && !shown.some(item => item.pair_id === currentId)) currentId = shown[0].pair_id;
+      renderList(); if (shown.length) renderCurrent();
+    });
+    $("filter-row").addEventListener("click", event => {
+      const button = event.target.closest("button[data-filter]"); if (!button) return;
+      activeFilter = button.dataset.filter;
+      for (const node of $("filter-row").querySelectorAll(".filter")) node.classList.toggle("active", node === button);
+      const shown = visibleItems(); if (shown.length && !shown.some(item => item.pair_id === currentId)) currentId = shown[0].pair_id;
+      renderList(); if (shown.length) renderCurrent();
+    });
+    $("previous-button").addEventListener("click", () => navigate(-1));
+    $("next-button").addEventListener("click", () => navigate(1));
+    $("approve-button").addEventListener("click", () => decide("approved"));
+    $("reject-button").addEventListener("click", () => decide("rejected"));
+    $("uncertain-button").addEventListener("click", () => decide("uncertain"));
+    $("reset-button").addEventListener("click", resetDecision);
+    $("export-button").addEventListener("click", exportJsonl);
+    $("import-button").addEventListener("click", () => $("import-file").click());
+    $("import-file").addEventListener("change", async event => {
+      await importJsonl(event.target.files[0]); event.target.value = "";
+    });
+    document.addEventListener("keydown", event => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault(); exportJsonl(); return;
+      }
+      if (/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName) || event.altKey || event.ctrlKey || event.metaKey) return;
+      if (event.key.toLowerCase() === "j") navigate(1);
+      if (event.key.toLowerCase() === "k") navigate(-1);
+    });
+    restore(); renderProgress(); renderList(); if (currentId) renderCurrent();
+  })();
+  </script>
+</body>
+</html>

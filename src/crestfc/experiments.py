@@ -7,10 +7,11 @@ from collections import Counter, defaultdict
 from pathlib import Path
 import numpy as np
 import torch
+from transformers import StoppingCriteria, StoppingCriteriaList
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score
 from .data import adapt, approved_pairs, make_pairs, read_jsonl, validate_dataset, write_jsonl
-from .evaluation import classification_metrics, pair_metrics
+from .evaluation import classification_metrics, pair_metrics, parse_generated_verdict
 from .modeling import (LABEL_ORDER, PROMPT_VERSION, VERDICT_PROMPT_VERSIONS, verdict_verbalizers,
                        add_lora, load_lora_state, extract_all, get_transformer_blocks,
                        label_margin, load_model, make_patch_hook, read_activation,
@@ -38,6 +39,18 @@ def _model(cfg):
 
 def _labels(cfg):
     return cfg.get("labels", list(LABEL_ORDER))
+
+
+class _StopAtVerdictOrNewline(StoppingCriteria):
+    def __init__(self, tokenizer, prefix_tokens: int, verbalizers: list[str]):
+        self.tokenizer = tokenizer
+        self.prefix_tokens = prefix_tokens
+        self.verbalizers = set(verbalizers)
+
+    def __call__(self, input_ids, scores, **kwargs):
+        generated = self.tokenizer.decode(input_ids[0, self.prefix_tokens:],
+                                          skip_special_tokens=True)
+        return generated.strip() in self.verbalizers or "\n" in generated
 
 
 def prepare(cfg):
@@ -77,24 +90,91 @@ def baseline(cfg):
         add_lora(model, meta["layers"], rank=lc.get("rank", 8), alpha=lc.get("alpha", 16), dropout=0.0)
         load_lora_state(model, ckpt / "model_lora.pt")
     model.eval()
+    if cfg.get("inference_mode") == "generate":
+        model.requires_grad_(False)
     labels = _labels(cfg)
     scheme = cfg.get("verdict_scheme", "fever3")
     verbalizers = verdict_verbalizers(labels, scheme)
     out = Path(cfg["output_dir"])
-    results = []
-    for condition in cfg.get("conditions", ["full", "claim_only", "evidence_only", "full_bias"]):
+    inference_mode = cfg.get("inference_mode", "candidate_score")
+    if inference_mode not in {"candidate_score", "generate"}:
+        raise ValueError(f"Unknown E0 inference mode: {inference_mode}")
+    max_new_tokens = int(cfg.get("max_new_tokens", 4))
+    if inference_mode == "generate" and not 1 <= max_new_tokens <= 64:
+        raise ValueError("E0 generation max_new_tokens must be between 1 and 64")
+    if inference_mode == "generate" and cfg.get("generation_strategy", "greedy_stop_on_label_or_newline_v1") != "greedy_stop_on_label_or_newline_v1":
+        raise ValueError("Unsupported E0 generation strategy")
+    conditions = cfg.get("conditions", ["full", "claim_only", "evidence_only", "full_bias"])
+    result_path = out / "predictions.jsonl"
+    if inference_mode == "generate":
+        out.mkdir(parents=True, exist_ok=True)
+        if result_path.exists() and not cfg.get("resume", False):
+            raise FileExistsError(f"Existing E0 generated predictions require resume=True: {result_path}")
+        results = read_jsonl(result_path) if result_path.exists() else []
+        completed = {}
+        for item in results:
+            key = (item["condition"], item["sample_id"])
+            if key in completed or item.get("inference_mode") != "generate":
+                raise ValueError(f"Duplicate or incompatible generated E0 result: {key}")
+            completed[key] = item
+        expected = {(condition, row["sample_id"]): row for condition in conditions for row in rows}
+        if any(key not in expected or item["gold"] != expected[key]["label"]
+               for key, item in completed.items()):
+            raise ValueError("Saved E0 predictions differ from the current data or conditions")
+        stream = result_path.open("a", encoding="utf8")
+    else:
+        results = []
+        completed = {}
+        stream = None
+    for condition in conditions:
         pred = {}
-        for row in rows:
-            with torch.inference_mode():
-                scores = score_candidate_sequences(model, tok, render_verdict(row, condition, scheme), verbalizers)
-            pred[row["sample_id"]] = labels[scores.argmax(-1).item()]
-            results.append({"sample_id": row["sample_id"], "group_id": row["group_id"],
-                            "condition": condition, "gold": row["label"],
-                            "prediction": pred[row["sample_id"]],
-                            "prediction_surface": verbalizers[scores.argmax(-1).item()],
-                            "scores": scores.squeeze(0).tolist()})
+        reused = 0
+        for index, row in enumerate(rows, 1):
+            key = (condition, row["sample_id"])
+            if key in completed:
+                item = completed[key]
+                reused += 1
+            elif inference_mode == "generate":
+                prompt = render_verdict(row, condition, scheme)
+                inputs = tok(prompt, add_special_tokens=False, return_tensors="pt")["input_ids"].to(model.device)
+                with torch.inference_mode():
+                    output_ids = model.generate(input_ids=inputs, do_sample=False,
+                                                max_new_tokens=max_new_tokens,
+                                                temperature=1.0, top_p=1.0, top_k=50,
+                                                stopping_criteria=StoppingCriteriaList([
+                                                    _StopAtVerdictOrNewline(tok, inputs.shape[1], verbalizers)]),
+                                                pad_token_id=tok.pad_token_id,
+                                                eos_token_id=tok.eos_token_id)
+                continuation = output_ids[0, inputs.shape[1]:]
+                raw = tok.decode(continuation, skip_special_tokens=True)
+                label, surface = parse_generated_verdict(raw, labels, verbalizers)
+                item = {"sample_id": row["sample_id"], "group_id": row["group_id"],
+                        "condition": condition, "gold": row["label"],
+                        "prediction": label, "prediction_surface": surface,
+                        "raw_output": raw, "output_token_count": int(continuation.numel()),
+                        "inference_mode": "generate"}
+                stream.write(json.dumps(item, ensure_ascii=False) + "\n")
+                stream.flush()
+                results.append(item)
+            else:
+                with torch.inference_mode():
+                    scores = score_candidate_sequences(model, tok, render_verdict(row, condition, scheme), verbalizers)
+                winner = scores.argmax(-1).item()
+                item = {"sample_id": row["sample_id"], "group_id": row["group_id"],
+                        "condition": condition, "gold": row["label"],
+                        "prediction": labels[winner], "prediction_surface": verbalizers[winner],
+                        "scores": scores.squeeze(0).tolist(),
+                        "inference_mode": "candidate_score"}
+                results.append(item)
+            pred[row["sample_id"]] = item["prediction"]
+            if inference_mode == "generate" and (index % 100 == 0 or index == len(rows)):
+                print(f"E0 {condition}: {index}/{len(rows)} processed, {reused} reused", flush=True)
         modes = sorted({r["evidence_mode"] for r in rows})
         _dump(out / f"metrics_{condition}.json", {"stage": "E0", "condition": condition,
+                                                    "model_id": cfg["model"]["id"],
+                                                    "inference_mode": inference_mode,
+                                                    "generation_strategy": "greedy_stop_on_label_or_newline_v1" if inference_mode == "generate" else None,
+                                                    "max_new_tokens": max_new_tokens if inference_mode == "generate" else None,
                                                     "verdict_prompt_version": VERDICT_PROMPT_VERSIONS[scheme],
                                                     "verdict_scheme": scheme,
                                                     "verbalizers": dict(zip(labels, verbalizers)),
@@ -102,7 +182,10 @@ def baseline(cfg):
                                                     "labels": labels,
                                                     **classification_metrics(rows, pred, labels),
                                                     **pair_metrics(rows, pairs, pred, split)})
-    write_jsonl(out / "predictions.jsonl", results)
+    if stream is not None:
+        stream.close()
+    else:
+        write_jsonl(result_path, results)
     return {"n_predictions": len(results), "output_dir": str(out)}
 
 

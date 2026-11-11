@@ -7,6 +7,15 @@ from sklearn.metrics import accuracy_score, confusion_matrix, f1_score
 from .data import approved_pairs
 
 
+def parse_generated_verdict(text: str, labels: list[str], verbalizers: list[str]) -> tuple[str, str]:
+    """Accept one complete output label; never match a label as a substring."""
+    if len(labels) != len(verbalizers) or len(set(verbalizers)) != len(verbalizers):
+        raise ValueError("Labels and verbalizers must be one-to-one")
+    surface = text.strip()
+    mapping = dict(zip(verbalizers, labels))
+    return mapping.get(surface, "INVALID"), surface if surface in mapping else "INVALID"
+
+
 def parse_structured_output(text: str, allowed_ids: set[str], labels: list[str]) -> dict:
     """Strictly parse generated JSON; preserve invalid outputs as INVALID."""
     try:

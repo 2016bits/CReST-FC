@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import torch
 from torch import nn
 from crestfc.data import Example, normalize_label, validate_dataset, build_fever_wiki_index, adapt
-from crestfc.evaluation import pair_metrics, clustered_bootstrap, parse_structured_output, evidence_prf
+from crestfc.evaluation import pair_metrics, clustered_bootstrap, parse_structured_output, parse_generated_verdict, evidence_prf
 from crestfc.modeling import make_patch_hook, temporary_hook, label_margin, last_nonpadding, score_candidate_sequences, render_verdict, verdict_verbalizers
 from crestfc.training import js_loss, flip_loss
 from crestfc.fever_probe import resolve_gpu_tokens, shard_is_complete, partition_count, fit_probe
@@ -32,6 +32,27 @@ class CoreTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             normalize_label("NOT_SUPPORTED")
         self.assertEqual(normalize_label("supported"), "SUPPORTS")
+
+    def test_generated_verdict_requires_one_exact_label(self):
+        labels = ["SUPPORTS", "REFUTES"]
+        verbalizers = ["SUPPORTED", "NOT_SUPPORTED"]
+        self.assertEqual(parse_generated_verdict(" NOT_SUPPORTED\n", labels, verbalizers),
+                         ("REFUTES", "NOT_SUPPORTED"))
+        self.assertEqual(parse_generated_verdict("SUPPORTED", labels, verbalizers),
+                         ("SUPPORTS", "SUPPORTED"))
+        for text in ("NOT_SUPPORTED because...", "unsupported", "SUPPORTED or NOT_SUPPORTED", ""):
+            self.assertEqual(parse_generated_verdict(text, labels, verbalizers),
+                             ("INVALID", "INVALID"))
+
+    def test_binary_fever_prompt_keeps_refutation_distinct_from_insufficiency(self):
+        row = self.sample("x", "REFUTES", "Acme began in 2012.")
+        prompt = render_verdict(row, scheme="fever_binary")
+        self.assertEqual(verdict_verbalizers(["SUPPORTS", "REFUTES"], "fever_binary"),
+                         ["SUPPORTS", "REFUTES"])
+        self.assertIn("REFUTES: The evidence contradicts the claim.", prompt)
+        self.assertNotIn("NEI", prompt)
+        self.assertNotIn("NOT_SUPPORTED", prompt)
+        self.assertTrue(prompt.endswith("Answer:"))
 
     def test_visible_gpu_mapping(self):
         self.assertEqual(resolve_gpu_tokens([0, 1, 5], "0,1,2,3,4,7", 6), ["0", "1", "7"])
