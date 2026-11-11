@@ -1,0 +1,35 @@
+# Local datasets and generated experiment artifacts
+/data/
+/outputs/
+/checkpoints/
+/runs/
+/wandb/
+/mlruns/
+/lightning_logs/
+/tensorboard/
+
+# Large model, array, and archive files kept outside the directories above
+*.ckpt
+*.pth
+*.pt
+*.onnx
+*.safetensors
+*.npy
+*.npz
+*.parquet
+*.arrow
+*.tar
+*.tar.gz
+*.tgz
+*.tar.bz2
+*.zip
+*.7z
+
+# Local tooling files
+/.vscode/
+/.pytest_cache/
+__pycache__/
+*.py[cod]
+.venv/
+.env
+.env.*
